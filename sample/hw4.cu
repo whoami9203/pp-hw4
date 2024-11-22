@@ -46,6 +46,13 @@ typedef struct _block
     unsigned int nonce;
 }HashBlock;
 
+typedef struct _sharedData
+{
+    HashBlock block;
+    SHA256 sha256_ctx;
+    SHA256 tmp;
+}SharedData;
+
 __constant__ static const WORD k[64] = {
 	0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
 	0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -462,18 +469,16 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution, unsigned char *found_flag) {
-    __shared__ HashBlock d_block[BLOCK_SIZE];
-    __shared__ SHA256 sha256_ctx[BLOCK_SIZE];
-    __shared__ SHA256 tmp[BLOCK_SIZE];
+    __shared__ SharedData d_data[BLOCK_SIZE];
 
-    d_block[threadIdx.x] = *block;
-    d_block[threadIdx.x].nonce = blockIdx.x * blockDim.x + threadIdx.x;
+    d_data[threadIdx.x].block = *block;
+    d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (*found_flag == 0) {
         // Compute double SHA-256
-        double_sha256(&tmp[threadIdx.x], &sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x]);
+        double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
 
-        const unsigned int *a_int = reinterpret_cast<const unsigned int*>(sha256_ctx[threadIdx.x].b);
+        const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.b);
         const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
         // compared from lowest bit
         int result = 0;
@@ -489,7 +494,7 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
         // Check if the hash is less than the target
         if (result < 0) {
             // Write the solution and signal that a valid nonce is found
-            *solution = d_block[threadIdx.x].nonce;
+            *solution = d_data[threadIdx.x].block.nonce;
             *found_flag = 1;
             return; // Exit the kernel
         }
