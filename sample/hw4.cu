@@ -442,10 +442,11 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes)
+__device__ void double_sha256(SHA256 *sha256_ctx, unsigned char *bytes)
 {
-    sha256(tmp, (BYTE*)bytes, sizeof(HashBlock));
-    sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256));
+    SHA256 tmp;
+    sha256(&tmp, (BYTE*)bytes, sizeof(HashBlock));
+    sha256(sha256_ctx, (BYTE*)&tmp, sizeof(SHA256));
 }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
@@ -460,14 +461,14 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution, unsigned char *found_flag) {
     __shared__ HashBlock d_block[BLOCK_SIZE];
     __shared__ SHA256 sha256_ctx[BLOCK_SIZE];
-    __shared__ SHA256 tmp[BLOCK_SIZE];
+    // __shared__ SHA256 tmp[BLOCK_SIZE];
 
     d_block[threadIdx.x] = *block;
     d_block[threadIdx.x].nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (*found_flag == 0) {
         // Compute double SHA-256
-        double_sha256(&tmp[threadIdx.x], &sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x]);
+        double_sha256(&sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x]);
 
         // Check if the hash is less than the target
         if (little_endian_bit_comparison(sha256_ctx[threadIdx.x].b, target) < 0) {
