@@ -423,15 +423,7 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 __global__ void find_nonce(HashBlock *block, unsigned char *target, unsigned int *solution, unsigned char *found_flag) {
     // Calculate the global nonce based on thread and block indices
-    __shared__ HashBlock shared_block;
-    __shared__ unsigned char shared_target[32];
-    if (threadIdx.x == 0) {
-        shared_block = *block;
-        memcpy(shared_target, target, 32);
-    }
-    __syncthreads();
-
-    HashBlock d_block = shared_block;
+    HashBlock d_block = *block;
     d_block.nonce = (uint64_t)blockIdx.x * (uint64_t)blockDim.x + (uint64_t)threadIdx.x;
     SHA256 sha256_ctx;
 
@@ -441,7 +433,7 @@ __global__ void find_nonce(HashBlock *block, unsigned char *target, unsigned int
         // print_hex(sha256_ctx.b, 32);
 
         // Check if the hash is less than the target
-        if (little_endian_bit_comparison(sha256_ctx.b, shared_target, 32) < 0) {
+        if (little_endian_bit_comparison(sha256_ctx.b, target, 32) < 0) {
             // Write the solution and signal that a valid nonce is found
             *solution = d_block.nonce;
             *found_flag = 1;
