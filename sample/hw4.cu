@@ -423,18 +423,11 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 __global__ void find_nonce(HashBlock *block, unsigned char *target, unsigned int *solution, unsigned char *found_flag) {
     // Calculate the global nonce based on thread and block indices
-    uint64_t nonce_start = blockIdx.x * blockDim.x + threadIdx.x;
-    uint64_t nonce_step = gridDim.x * blockDim.x;
-
     HashBlock d_block = *block;
+    d_block.nonce = (uint64_t)blockIdx.x * (uint64_t)blockDim.x + (uint64_t)threadIdx.x;
     SHA256 sha256_ctx;
 
-    for (d_block.nonce = nonce_start; 0xffffffff - d_block.nonce >= nonce_step; d_block.nonce += nonce_step) {
-        // Periodically check if a solution has been found
-        if (*found_flag) {
-            return; // Stop if solution has been found
-        }
-
+    if (*found_flag == 0) {
         // Compute double SHA-256
         double_sha256(&sha256_ctx, (unsigned char*)&d_block, sizeof(HashBlock));
         // print_hex(sha256_ctx.b, 32);
@@ -624,7 +617,7 @@ void solve(FILE *fin, FILE *fout)
 
     // Launch kernel
     int threads_per_block = 256;
-    int blocks_per_grid = 1280; // Adjust based on your GPU
+    int blocks_per_grid = 16777216; // Adjust based on your GPU
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution, d_found_flag);
 
     err = cudaGetLastError();
