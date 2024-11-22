@@ -365,7 +365,7 @@ void convert_string_to_little_endian_bytes(unsigned char* out, char *in, size_t 
 }
 
 // print out binary array (from highest value) in the hex format
-__host__ __device__ void print_hex(unsigned char* hex, size_t len)
+void print_hex(unsigned char* hex, size_t len)
 {
     for(int i=0;i<len;++i)
     {
@@ -376,7 +376,7 @@ __host__ __device__ void print_hex(unsigned char* hex, size_t len)
 
 
 // print out binar array (from lowest value) in the hex format
-__host__ __device__ void print_hex_inverse(unsigned char* hex, size_t len)
+void print_hex_inverse(unsigned char* hex, size_t len)
 {
     for(int i=len-1;i>=0;--i)
     {
@@ -385,7 +385,7 @@ __host__ __device__ void print_hex_inverse(unsigned char* hex, size_t len)
     printf("\n");
 }
 
-__host__ __device__ int little_endian_bit_comparison(const unsigned char *a, const unsigned char *b, size_t byte_len)
+__device__ int little_endian_bit_comparison(const unsigned char *a, const unsigned char *b, size_t byte_len)
 {
     // compared from lowest bit
     for(int i=byte_len-1;i>=0;--i)
@@ -540,22 +540,22 @@ void solve(FILE *fin, FILE *fout)
     unsigned char merkle_root[32];
     calc_merkle_root(merkle_root, tx, merkle_branch);
 
-    fprintf(stderr, "merkle root(little): ");
-    print_hex(merkle_root, 32);
-    fprintf(stderr, "\n");
+    // fprintf(stderr, "merkle root(little): ");
+    // print_hex(merkle_root, 32);
+    // fprintf(stderr, "\n");
 
-    fprintf(stderr, "merkle root(big):    ");
-    print_hex_inverse(merkle_root, 32);
-    fprintf(stderr, "\n");
+    // fprintf(stderr, "merkle root(big):    ");
+    // print_hex_inverse(merkle_root, 32);
+    // fprintf(stderr, "\n");
 
     // **** solve block ****
-    fprintf(stderr, "Block info (big): \n");
-    fprintf(stderr, "  version:  %s\n", version);
-    fprintf(stderr, "  pervhash: %s\n", prevhash);
-    fprintf(stderr, "  merkleroot: "); print_hex_inverse(merkle_root, 32); fprintf(stderr, "\n");
-    fprintf(stderr, "  nbits:    %s\n", nbits);
-    fprintf(stderr, "  ntime:    %s\n", ntime);
-    fprintf(stderr, "  nonce:    ???\n\n");
+    // fprintf(stderr, "Block info (big): \n");
+    // fprintf(stderr, "  version:  %s\n", version);
+    // fprintf(stderr, "  pervhash: %s\n", prevhash);
+    // fprintf(stderr, "  merkleroot: "); print_hex_inverse(merkle_root, 32); fprintf(stderr, "\n");
+    // fprintf(stderr, "  nbits:    %s\n", nbits);
+    // fprintf(stderr, "  ntime:    %s\n", ntime);
+    // fprintf(stderr, "  nonce:    ???\n\n");
 
     HashBlock block;
 
@@ -585,13 +585,13 @@ void solve(FILE *fin, FILE *fout)
     target_hex[sb + 3] = (mant >> (24-rb));
     
     
-    printf("Target value (big): ");
-    print_hex_inverse(target_hex, 32);
-    printf("\n");
-    fflush(stdout);
+    // printf("Target value (big): ");
+    // print_hex_inverse(target_hex, 32);
+    // printf("\n");
+    // fflush(stdout);
 
 
-    fprintf(stderr, "start to find nonce\n");
+    // fprintf(stderr, "start to find nonce\n");
     // ********** find nonce **************
     HashBlock *d_block;
     unsigned char *d_target;
