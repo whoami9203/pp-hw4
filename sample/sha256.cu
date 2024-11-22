@@ -145,7 +145,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 	{
 		sha256_transform(ctx, m);
 		memset(m, 0, sizeof(m));
-		printf("true\n");
+		// printf("true\n");
 	}
 	
 	// Append L as a 64-bit bug-endian integer, making the total post-processed length a multiple of 512 bits

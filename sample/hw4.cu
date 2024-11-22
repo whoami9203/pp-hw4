@@ -9,11 +9,13 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <chrono>
 
 #include <cstdio>
 #include <cstring>
 
 #include <cassert>
+#include <cuda_runtime.h>
 
 // #include "sha256.h"
 
@@ -63,7 +65,7 @@ static const WORD h_k[64] = {
 	0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
-__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
+__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
 {
 	WORD a, b, c, d, e, f, g, h;
 	WORD i, j;
@@ -102,7 +104,7 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 		WORD S1 = (_rotr(e, 6)) ^ (_rotr(e, 11)) ^ (_rotr(e, 25));
 		WORD ch = (e & f) ^ ((~e) & g);
 		WORD maj = (a & b) ^ (a & c) ^ (b & c);
-		WORD temp1 = h + S1 + ch + k[i] + w[i];
+		WORD temp1 = h + S1 + ch + sk[i] + w[i];
 		WORD temp2 = S0 + maj;
 		
 		h = g;
@@ -127,7 +129,7 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 	
 }
 
-__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
+__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 {
 	// Initialize hash values:
 	// (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
@@ -149,7 +151,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 	// For each chunk:
 	for(i=0;i<total_len;i+=64)
 	{
-		sha256_transform(ctx, &msg[i]);
+		sha256_transform(ctx, &msg[i], sk);
 	}
 	
 	// Process remain data
@@ -165,9 +167,9 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 	// Append K '0' bits, where k is the minimum number >= 0 such that L + 1 + K + 64 is a multiple of 512
 	if(j > 56)
 	{
-		sha256_transform(ctx, m);
+		sha256_transform(ctx, m, sk);
 		memset(m, 0, sizeof(m));
-		printf("true\n");
+		// printf("true\n");
 	}
 	
 	// Append L as a 64-bit bug-endian integer, making the total post-processed length a multiple of 512 bits
@@ -180,7 +182,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 	m[58] = L >> 40;
 	m[57] = L >> 48;
 	m[56] = L >> 56;
-	sha256_transform(ctx, m);
+	sha256_transform(ctx, m, sk);
 	
 	// Produce the final hash value (little-endian to big-endian)
 	// Swap 1st & 4th, 2nd & 3rd byte for each word
@@ -408,11 +410,11 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
+__device__ void double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len, WORD *sk)
 {
     SHA256 tmp;
-    sha256(&tmp, (BYTE*)bytes, len);
-    sha256(sha256_ctx, (BYTE*)&tmp, sizeof(tmp));
+    sha256(&tmp, (BYTE*)bytes, len, sk);
+    sha256(sha256_ctx, (BYTE*)&tmp, sizeof(tmp), sk);
 }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
@@ -421,16 +423,23 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
     h_sha256(sha256_ctx, (BYTE*)&tmp, sizeof(tmp));
 }
 
-__global__ void find_nonce(HashBlock *block, unsigned char *target, unsigned int *solution, unsigned char *found_flag) {
-    // Calculate the global nonce based on thread and block indices
+////////////////////   Find Nonce   /////////////////////
+
+
+__global__ void find_nonce(__restrict__ HashBlock *block, unsigned char *target, unsigned int *solution, unsigned char *found_flag) {
+    __shared__ WORD shared_k[64];
+    if (threadIdx.x < 64){
+        shared_k[threadIdx.x] = k[threadIdx.x];
+    }
+    __syncthreads();
+
     HashBlock d_block = *block;
-    d_block.nonce = (uint64_t)blockIdx.x * (uint64_t)blockDim.x + (uint64_t)threadIdx.x;
+    d_block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
     SHA256 sha256_ctx;
 
     if (*found_flag == 0) {
         // Compute double SHA-256
-        double_sha256(&sha256_ctx, (unsigned char*)&d_block, sizeof(HashBlock));
-        // print_hex(sha256_ctx.b, 32);
+        double_sha256(&sha256_ctx, (unsigned char*)&d_block, sizeof(HashBlock), shared_k);
 
         // Check if the hash is less than the target
         if (little_endian_bit_comparison(sha256_ctx.b, target, 32) < 0) {
@@ -615,6 +624,10 @@ void solve(FILE *fin, FILE *fout)
         fprintf(stderr, "cudaMemcpy error: %s\n", cudaGetErrorString(err));
     }
 
+    // Set the cache configuration for the kernel
+    // cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferL1);
+
+    auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
     int threads_per_block = 256;
     int blocks_per_grid = 16777216; // Adjust based on your GPU
@@ -631,6 +644,9 @@ void solve(FILE *fin, FILE *fout)
     if (err != cudaSuccess){
         fprintf(stderr, "DeviceSynchronize error: %s\n", cudaGetErrorString(err));
     }
+    auto end_kernel = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> kernel_time = end_kernel - start_kernel;
+    std::cout << " Kernel Time: " << kernel_time.count() << " s" << std::endl;
 
     // Copy the result back to the host
     cudaMemcpy(&h_solution, d_solution, sizeof(unsigned int), cudaMemcpyDeviceToHost);
