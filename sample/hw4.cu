@@ -65,7 +65,7 @@ static const WORD h_k[64] = {
 	0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
-__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
+__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 {
 	WORD a, b, c, d, e, f, g, h;
 	WORD i, j;
@@ -104,7 +104,7 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
 		WORD S1 = (_rotr(e, 6)) ^ (_rotr(e, 11)) ^ (_rotr(e, 25));
 		WORD ch = (e & f) ^ ((~e) & g);
 		WORD maj = (a & b) ^ (a & c) ^ (b & c);
-		WORD temp1 = h + S1 + ch + sk[i] + w[i];
+		WORD temp1 = h + S1 + ch + k[i] + w[i];
 		WORD temp2 = S0 + maj;
 		
 		h = g;
@@ -129,7 +129,7 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
 	
 }
 
-__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
+__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 {
 	// Initialize hash values:
 	// (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
@@ -151,7 +151,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 	// For each chunk:
 	for(i=0;i<total_len;i+=64)
 	{
-		sha256_transform(ctx, &msg[i], sk);
+		sha256_transform(ctx, &msg[i]);
 	}
 	
 	// Process remain data
@@ -167,7 +167,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 	// Append K '0' bits, where k is the minimum number >= 0 such that L + 1 + K + 64 is a multiple of 512
 	if(j > 56)
 	{
-		sha256_transform(ctx, m, sk);
+		sha256_transform(ctx, m);
 		memset(m, 0, sizeof(m));
 		// printf("true\n");
 	}
@@ -182,7 +182,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 	m[58] = L >> 40;
 	m[57] = L >> 48;
 	m[56] = L >> 56;
-	sha256_transform(ctx, m, sk);
+	sha256_transform(ctx, m);
 	
 	// Produce the final hash value (little-endian to big-endian)
 	// Swap 1st & 4th, 2nd & 3rd byte for each word
@@ -410,11 +410,11 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len, WORD *sk)
+__device__ void double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
     SHA256 tmp;
-    sha256(&tmp, (BYTE*)bytes, len, sk);
-    sha256(sha256_ctx, (BYTE*)&tmp, sizeof(tmp), sk);
+    sha256(&tmp, (BYTE*)bytes, len);
+    sha256(sha256_ctx, (BYTE*)&tmp, sizeof(tmp));
 }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
@@ -427,19 +427,13 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char *target, unsigned int *solution, unsigned char *found_flag) {
-    __shared__ WORD shared_k[64];
-    if (threadIdx.x < 64){
-        shared_k[threadIdx.x] = k[threadIdx.x];
-    }
-    __syncthreads();
-
     HashBlock d_block = *block;
     d_block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
     SHA256 sha256_ctx;
 
     if (*found_flag == 0) {
         // Compute double SHA-256
-        double_sha256(&sha256_ctx, (unsigned char*)&d_block, sizeof(HashBlock), shared_k);
+        double_sha256(&sha256_ctx, (unsigned char*)&d_block, sizeof(HashBlock));
 
         // Check if the hash is less than the target
         if (little_endian_bit_comparison(sha256_ctx.b, target, 32) < 0) {
@@ -625,7 +619,7 @@ void solve(FILE *fin, FILE *fout)
     }
 
     // Set the cache configuration for the kernel
-    // cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferL1);
+    cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferL1);
 
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
