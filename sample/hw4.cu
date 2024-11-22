@@ -67,7 +67,7 @@ static const WORD h_k[64] = {
 	0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
-__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
+__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 {
 	WORD a, b, c, d, e, f, g, h;
 	WORD i, j;
@@ -118,7 +118,7 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
 		WORD S1 = (_rotr(e, 6)) ^ (_rotr(e, 11)) ^ (_rotr(e, 25));
 		WORD ch = (e & f) ^ ((~e) & g);
 		WORD maj = (a & b) ^ (a & c) ^ (b & c);
-		WORD temp1 = h + S1 + ch + sk[i] + w[i];
+		WORD temp1 = h + S1 + ch + k[i] + w[i];
 		WORD temp2 = S0 + maj;
 		
 		h = g;
@@ -143,7 +143,7 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg, WORD *sk)
 	
 }
 
-__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
+__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 {
 	// Initialize hash values:
 	// (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
@@ -165,7 +165,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 	// For each chunk:
 	for(i=0;i<total_len;i+=64)
 	{
-		sha256_transform(ctx, &msg[i], sk);
+		sha256_transform(ctx, &msg[i]);
 	}
 	
 	// Process remain data
@@ -181,7 +181,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 	// Append K '0' bits, where k is the minimum number >= 0 such that L + 1 + K + 64 is a multiple of 512
 	if(j > 56)
 	{
-		sha256_transform(ctx, m, sk);
+		sha256_transform(ctx, m);
 		memset(m, 0, sizeof(m));
 		// printf("true\n");
 	}
@@ -196,7 +196,7 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len, WORD *sk)
 	m[58] = L >> 40;
 	m[57] = L >> 48;
 	m[56] = L >> 56;
-	sha256_transform(ctx, m, sk);
+	sha256_transform(ctx, m);
 	
 	// Produce the final hash value (little-endian to big-endian)
 	// Swap 1st & 4th, 2nd & 3rd byte for each word
@@ -442,10 +442,10 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes, WORD *sk)
+__device__ void double_sha256(SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes)
 {
-    sha256(tmp, (BYTE*)bytes, sizeof(HashBlock), sk);
-    sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256), sk);
+    sha256(tmp, (BYTE*)bytes, sizeof(HashBlock));
+    sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256));
 }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
@@ -461,16 +461,13 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
     __shared__ HashBlock d_block[BLOCK_SIZE];
     __shared__ SHA256 sha256_ctx[BLOCK_SIZE];
     __shared__ SHA256 tmp[BLOCK_SIZE];
-    __shared__ WORD sk[64];
-    if(threadIdx.x < 64)
-        sk[threadIdx.x] = k[threadIdx.x];
 
     d_block[threadIdx.x] = *block;
     d_block[threadIdx.x].nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (*found_flag == 0) {
         // Compute double SHA-256
-        double_sha256(&tmp[threadIdx.x], &sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x], sk);
+        double_sha256(&tmp[threadIdx.x], &sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x]);
 
         // Check if the hash is less than the target
         if (little_endian_bit_comparison(sha256_ctx[threadIdx.x].b, target) < 0) {
