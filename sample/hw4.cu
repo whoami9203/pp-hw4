@@ -419,18 +419,22 @@ void print_hex_inverse(unsigned char* hex, size_t len)
     printf("\n");
 }
 
-__device__ int little_endian_bit_comparison(const unsigned char *a, const unsigned char *b)
-{
-    const unsigned int *a_int = reinterpret_cast<const unsigned int*>(a);
-    const unsigned int *b_int = reinterpret_cast<const unsigned int*>(b);
-    // compared from lowest bit
-    int result = 0;
-    for (int i = 7; i >= 0; --i) {
-        result |= (a_int[i] > b_int[i]) - (a_int[i] < b_int[i]);
-        if (result != 0) break;
-    }
-    return result;
-}
+// __device__ int little_endian_bit_comparison(const unsigned char *a, const unsigned char *b)
+// {
+//     const unsigned int *a_int = reinterpret_cast<const unsigned int*>(a);
+//     const unsigned int *b_int = reinterpret_cast<const unsigned int*>(b);
+//     // compared from lowest bit
+//     int result = 0;
+//     result = (result << 1) + (a_int[7] > b_int[7]) - (a_int[7] < b_int[7]);
+//     result = (result << 1) + (a_int[6] > b_int[6]) - (a_int[6] < b_int[6]);
+//     result = (result << 1) + (a_int[5] > b_int[5]) - (a_int[5] < b_int[5]);
+//     result = (result << 1) + (a_int[4] > b_int[4]) - (a_int[4] < b_int[4]);
+//     result = (result << 1) + (a_int[3] > b_int[3]) - (a_int[3] < b_int[3]);
+//     result = (result << 1) + (a_int[2] > b_int[2]) - (a_int[2] < b_int[2]);
+//     result = (result << 1) + (a_int[1] > b_int[1]) - (a_int[1] < b_int[1]);
+//     result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
+//     return result;
+// }
 
 void getline(char *str, size_t len, FILE *fp)
 {
@@ -469,8 +473,21 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
         // Compute double SHA-256
         double_sha256(&tmp[threadIdx.x], &sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x]);
 
+        const unsigned int *a_int = reinterpret_cast<const unsigned int*>(sha256_ctx[threadIdx.x].b);
+        const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
+        // compared from lowest bit
+        int result = 0;
+        result = (result << 1) + (a_int[7] > b_int[7]) - (a_int[7] < b_int[7]);
+        result = (result << 1) + (a_int[6] > b_int[6]) - (a_int[6] < b_int[6]);
+        result = (result << 1) + (a_int[5] > b_int[5]) - (a_int[5] < b_int[5]);
+        result = (result << 1) + (a_int[4] > b_int[4]) - (a_int[4] < b_int[4]);
+        result = (result << 1) + (a_int[3] > b_int[3]) - (a_int[3] < b_int[3]);
+        result = (result << 1) + (a_int[2] > b_int[2]) - (a_int[2] < b_int[2]);
+        result = (result << 1) + (a_int[1] > b_int[1]) - (a_int[1] < b_int[1]);
+        result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
+
         // Check if the hash is less than the target
-        if (little_endian_bit_comparison(sha256_ctx[threadIdx.x].b, target) < 0) {
+        if (result < 0) {
             // Write the solution and signal that a valid nonce is found
             *solution = d_block[threadIdx.x].nonce;
             *found_flag = 1;
