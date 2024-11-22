@@ -19,6 +19,8 @@
 
 // #include "sha256.h"
 
+#define BLOCK_SIZE 256
+
 #define _rotl(v, s) ((v)<<(s) | (v)>>(32-(s)))
 #define _rotr(v, s) ((v)>>(s) | (v)<<(32-(s)))
 
@@ -73,10 +75,22 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 	// Create a 64-entry message schedule array w[0..63] of 32-bit words
 	WORD w[64];
 	// Copy chunk into first 16 words w[0..15] of the message schedule array
-	for(i=0, j=0;i<16;++i, j+=4)
-	{
-		w[i] = (msg[j]<<24) | (msg[j+1]<<16) | (msg[j+2]<<8) | (msg[j+3]);
-	}
+	w[0]  = (msg[0]<<24)  | (msg[1]<<16)  | (msg[2]<<8)  | msg[3];
+    w[1]  = (msg[4]<<24)  | (msg[5]<<16)  | (msg[6]<<8)  | msg[7];
+    w[2]  = (msg[8]<<24)  | (msg[9]<<16)  | (msg[10]<<8) | msg[11];
+    w[3]  = (msg[12]<<24) | (msg[13]<<16) | (msg[14]<<8) | msg[15];
+    w[4]  = (msg[16]<<24) | (msg[17]<<16) | (msg[18]<<8) | msg[19];
+    w[5]  = (msg[20]<<24) | (msg[21]<<16) | (msg[22]<<8) | msg[23];
+    w[6]  = (msg[24]<<24) | (msg[25]<<16) | (msg[26]<<8) | msg[27];
+    w[7]  = (msg[28]<<24) | (msg[29]<<16) | (msg[30]<<8) | msg[31];
+    w[8]  = (msg[32]<<24) | (msg[33]<<16) | (msg[34]<<8) | msg[35];
+    w[9]  = (msg[36]<<24) | (msg[37]<<16) | (msg[38]<<8) | msg[39];
+    w[10] = (msg[40]<<24) | (msg[41]<<16) | (msg[42]<<8) | msg[43];
+    w[11] = (msg[44]<<24) | (msg[45]<<16) | (msg[46]<<8) | msg[47];
+    w[12] = (msg[48]<<24) | (msg[49]<<16) | (msg[50]<<8) | msg[51];
+    w[13] = (msg[52]<<24) | (msg[53]<<16) | (msg[54]<<8) | msg[55];
+    w[14] = (msg[56]<<24) | (msg[57]<<16) | (msg[58]<<8) | msg[59];
+    w[15] = (msg[60]<<24) | (msg[61]<<16) | (msg[62]<<8) | msg[63];
 	
 	// Extend the first 16 words into the remaining 48 words w[16..63] of the message schedule array:
 	for(i=16;i<64;++i)
@@ -186,11 +200,29 @@ __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
 	
 	// Produce the final hash value (little-endian to big-endian)
 	// Swap 1st & 4th, 2nd & 3rd byte for each word
-	for(i=0;i<32;i+=4)
-	{
-        _swap(ctx->b[i], ctx->b[i+3]);
-        _swap(ctx->b[i+1], ctx->b[i+2]);
-	}
+	_swap(ctx->b[0], ctx->b[3]);
+    _swap(ctx->b[1], ctx->b[2]);
+
+    _swap(ctx->b[4], ctx->b[7]);
+    _swap(ctx->b[5], ctx->b[6]);
+
+    _swap(ctx->b[8], ctx->b[11]);
+    _swap(ctx->b[9], ctx->b[10]);
+
+    _swap(ctx->b[12], ctx->b[15]);
+    _swap(ctx->b[13], ctx->b[14]);
+
+    _swap(ctx->b[16], ctx->b[19]);
+    _swap(ctx->b[17], ctx->b[18]);
+
+    _swap(ctx->b[20], ctx->b[23]);
+    _swap(ctx->b[21], ctx->b[22]);
+
+    _swap(ctx->b[24], ctx->b[27]);
+    _swap(ctx->b[25], ctx->b[26]);
+
+    _swap(ctx->b[28], ctx->b[31]);
+    _swap(ctx->b[29], ctx->b[30]);
 }
 
 // host version
@@ -387,17 +419,17 @@ void print_hex_inverse(unsigned char* hex, size_t len)
     printf("\n");
 }
 
-__device__ int little_endian_bit_comparison(const unsigned char *a, const unsigned char *b, size_t byte_len)
+__device__ int little_endian_bit_comparison(const unsigned char *a, const unsigned char *b)
 {
+    const unsigned int *a_int = reinterpret_cast<const unsigned int*>(a);
+    const unsigned int *b_int = reinterpret_cast<const unsigned int*>(b);
     // compared from lowest bit
-    for(int i=byte_len-1;i>=0;--i)
-    {
-        if(a[i] < b[i])
-            return -1;
-        else if(a[i] > b[i])
-            return 1;
+    int result = 0;
+    for (int i = 7; i >= 0; --i) {
+        result |= (a_int[i] > b_int[i]) - (a_int[i] < b_int[i]);
+        if (result != 0) break;
     }
-    return 0;
+    return result;
 }
 
 void getline(char *str, size_t len, FILE *fp)
@@ -410,11 +442,10 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
+__device__ void double_sha256(SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes)
 {
-    SHA256 tmp;
-    sha256(&tmp, (BYTE*)bytes, len);
-    sha256(sha256_ctx, (BYTE*)&tmp, sizeof(tmp));
+    sha256(tmp, (BYTE*)bytes, sizeof(HashBlock));
+    sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256));
 }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
@@ -426,19 +457,22 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 ////////////////////   Find Nonce   /////////////////////
 
 
-__global__ void find_nonce(__restrict__ HashBlock *block, unsigned char *target, unsigned int *solution, unsigned char *found_flag) {
-    HashBlock d_block = *block;
-    d_block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
-    SHA256 sha256_ctx;
+__global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution, unsigned char *found_flag) {
+    __shared__ HashBlock d_block[BLOCK_SIZE];
+    __shared__ SHA256 sha256_ctx[BLOCK_SIZE];
+    __shared__ SHA256 tmp[BLOCK_SIZE];
+
+    d_block[threadIdx.x] = *block;
+    d_block[threadIdx.x].nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (*found_flag == 0) {
         // Compute double SHA-256
-        double_sha256(&sha256_ctx, (unsigned char*)&d_block, sizeof(HashBlock));
+        double_sha256(&tmp[threadIdx.x], &sha256_ctx[threadIdx.x], (unsigned char*)&d_block[threadIdx.x]);
 
         // Check if the hash is less than the target
-        if (little_endian_bit_comparison(sha256_ctx.b, target, 32) < 0) {
+        if (little_endian_bit_comparison(sha256_ctx[threadIdx.x].b, target) < 0) {
             // Write the solution and signal that a valid nonce is found
-            *solution = d_block.nonce;
+            *solution = d_block[threadIdx.x].nonce;
             *found_flag = 1;
             return; // Exit the kernel
         }
