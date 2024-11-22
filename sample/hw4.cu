@@ -429,7 +429,7 @@ __global__ void find_nonce(HashBlock *block, unsigned char *target, unsigned int
     HashBlock d_block = *block;
     SHA256 sha256_ctx;
 
-    for (d_block.nonce = nonce_start; d_block.nonce <= 0xfff; d_block.nonce += nonce_step) {
+    for (d_block.nonce = nonce_start; d_block.nonce <= 0xffffffff; d_block.nonce += nonce_step) {
         // Periodically check if a solution has been found
         if (*found_flag) {
             return; // Stop if solution has been found
