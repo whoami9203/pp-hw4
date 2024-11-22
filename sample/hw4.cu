@@ -653,7 +653,7 @@ void solve(FILE *fin, FILE *fout)
     }
 
     // Set the cache configuration for the kernel
-    cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferL1);
+    cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferNone);
 
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
