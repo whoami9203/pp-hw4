@@ -470,11 +470,15 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution) {
     __shared__ SharedData d_data[BLOCK_SIZE];
+    __shared__ unsigned int found_flag;
+    if (threadIdx.x == 0)
+        found_flag = solution[0];
+    __syncthreads();
 
     d_data[threadIdx.x].block = *block;
     d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (!solution[0]) {
+    if (!found_flag) {
         // Compute double SHA-256
         double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
 
