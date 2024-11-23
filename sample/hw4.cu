@@ -478,22 +478,22 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned int* __restri
         // Compute double SHA-256
         double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
 
-        // const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.b);
-        // const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
+        unsigned int *a_int = (d_data[threadIdx.x].sha256_ctx.h);
+        unsigned int *b_int = (target);
         // compared from lowest bit
         int result = 0;
         // for (int i=7; i>=0; --i){
         //     result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[i] > target[i]) 
         //                            - (d_data[threadIdx.x].sha256_ctx.h[i] < target[i]);
         // }
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[7] > target[7]) - (d_data[threadIdx.x].sha256_ctx.h[7] < target[7]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[6] > target[6]) - (d_data[threadIdx.x].sha256_ctx.h[6] < target[6]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[5] > target[5]) - (d_data[threadIdx.x].sha256_ctx.h[5] < target[5]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[4] > target[4]) - (d_data[threadIdx.x].sha256_ctx.h[4] < target[4]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[3] > target[3]) - (d_data[threadIdx.x].sha256_ctx.h[3] < target[3]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[2] > target[2]) - (d_data[threadIdx.x].sha256_ctx.h[2] < target[2]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[1] > target[1]) - (d_data[threadIdx.x].sha256_ctx.h[1] < target[1]);
-        result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[0] > target[0]) - (d_data[threadIdx.x].sha256_ctx.h[0] < target[0]);
+        result = (result << 1) + (a_int[7] > b_int[7]) - (a_int[7] < b_int[7]);
+        result = (result << 1) + (a_int[6] > b_int[6]) - (a_int[6] < b_int[6]);
+        result = (result << 1) + (a_int[5] > b_int[5]) - (a_int[5] < b_int[5]);
+        result = (result << 1) + (a_int[4] > b_int[4]) - (a_int[4] < b_int[4]);
+        result = (result << 1) + (a_int[3] > b_int[3]) - (a_int[3] < b_int[3]);
+        result = (result << 1) + (a_int[2] > b_int[2]) - (a_int[2] < b_int[2]);
+        result = (result << 1) + (a_int[1] > b_int[1]) - (a_int[1] < b_int[1]);
+        result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
 
         // Check if the hash is less than the target
 
