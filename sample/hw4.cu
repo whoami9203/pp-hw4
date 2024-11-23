@@ -36,9 +36,9 @@ typedef union _sha256_ctx{
 
 typedef struct _cuda_sha256_ctx{
 	SHA256 state;
-	BYTE data[64];
     WORD data_len;
 	unsigned long long bit_len;
+	BYTE data[64];
 }CUDA_SHA256;
 
 ////////////////////////   Block   /////////////////////
@@ -520,14 +520,16 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution) {
     __shared__ CUDA_SHA256 sha256_ctx[BLOCK_SIZE];
+    __shared__ HashBlock d_block[BLOCK_SIZE];
 
-    HashBlock d_block = *block;
-    d_block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
+    d_block[threadIdx.x] = *block;
+    d_block[threadIdx.x].nonce = blockIdx.x * blockDim.x + threadIdx.x;
+    __syncthreads();
 
     // Compute double SHA-256
     // double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
     sha256_init(&sha256_ctx[threadIdx.x]);
-    sha256_update(&sha256_ctx[threadIdx.x], (unsigned char*)&d_block, sizeof(HashBlock));
+    sha256_update(&sha256_ctx[threadIdx.x], (BYTE*)&d_block[threadIdx.x], sizeof(HashBlock));
     sha256_final(&sha256_ctx[threadIdx.x]);
 
     SHA256 hash = sha256_ctx[threadIdx.x].state;
@@ -549,13 +551,7 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
     result = (result << 1) + (a_int[1] > b_int[1]) - (a_int[1] < b_int[1]);
     result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
 
-    solution[(result >= 0)] = d_block.nonce;
-    // Check if the hash is less than the target
-    // if (result < 0) {
-    //     // Write the solution and signal that a valid nonce is found
-    //     *solution = d_block.nonce;
-    // }
-    
+    solution[(result >= 0)] = d_block[threadIdx.x].nonce;    
 }
 
 ////////////////////   Merkle Root   /////////////////////
@@ -732,7 +728,7 @@ void solve(FILE *fin, FILE *fout)
     }
 
     // Set the cache configuration for the kernel
-    // cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferShared);
+    // cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferL1);
 
     cudaFuncAttributes attr;
     cudaFuncGetAttributes(&attr, find_nonce);
