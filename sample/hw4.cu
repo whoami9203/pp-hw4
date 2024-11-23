@@ -468,24 +468,20 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 ////////////////////   Find Nonce   /////////////////////
 
 
-__global__ void find_nonce(__restrict__ HashBlock *block, unsigned int* __restrict__ const target, unsigned int *solution) {
+__global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ const target, unsigned int *solution) {
     __shared__ SharedData d_data[BLOCK_SIZE];
 
-    if (!solution[0]) {
-        d_data[threadIdx.x].block = *block;
-        d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
+    d_data[threadIdx.x].block = *block;
+    d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
+    if (!solution[0]) {
         // Compute double SHA-256
         double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
 
-        const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.h);
-        const unsigned int *b_int = (target);
+        const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.b);
+        const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
         // compared from lowest bit
         int result = 0;
-        // for (int i=7; i>=0; --i){
-        //     result = (result << 1) + (d_data[threadIdx.x].sha256_ctx.h[i] > target[i]) 
-        //                            - (d_data[threadIdx.x].sha256_ctx.h[i] < target[i]);
-        // }
         result = (result << 1) + (a_int[7] > b_int[7]) - (a_int[7] < b_int[7]);
         result = (result << 1) + (a_int[6] > b_int[6]) - (a_int[6] < b_int[6]);
         result = (result << 1) + (a_int[5] > b_int[5]) - (a_int[5] < b_int[5]);
@@ -646,7 +642,7 @@ void solve(FILE *fin, FILE *fout)
     // fprintf(stderr, "start to find nonce\n");
     // ********** find nonce **************
     HashBlock *d_block;
-    unsigned int *d_target;
+    unsigned char *d_target;
     unsigned int *d_solution;
     unsigned int h_solution[2] = {};
     unsigned char h_found_flag = 0;
