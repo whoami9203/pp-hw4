@@ -468,7 +468,7 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 ////////////////////   Find Nonce   /////////////////////
 
 
-__global__ void find_nonce(__restrict__ HashBlock *block, unsigned int* __restrict__ target, unsigned int *solution) {
+__global__ void find_nonce(__restrict__ HashBlock *block, unsigned int* __restrict__ const target, unsigned int *solution) {
     __shared__ SharedData d_data[BLOCK_SIZE];
 
     if (!solution[0]) {
@@ -478,8 +478,8 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned int* __restri
         // Compute double SHA-256
         double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
 
-        unsigned int *a_int = (d_data[threadIdx.x].sha256_ctx.h);
-        unsigned int *b_int = (target);
+        const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.h);
+        const unsigned int *b_int = (target);
         // compared from lowest bit
         int result = 0;
         // for (int i=7; i>=0; --i){
