@@ -34,6 +34,13 @@ typedef union _sha256_ctx{
 	BYTE b[32];
 }SHA256;
 
+typedef struct _cuda_sha256_ctx{
+	SHA256 state;
+	BYTE data[64];
+    WORD data_len;
+	unsigned long long bit_len;
+}CUDA_SHA256;
+
 ////////////////////////   Block   /////////////////////
 
 typedef struct _block
@@ -49,8 +56,8 @@ typedef struct _block
 typedef struct __align__(32) _sharedData
 {
     HashBlock block;
-    SHA256 tmp;
-    SHA256 sha256_ctx;
+    CUDA_SHA256 tmp;
+    CUDA_SHA256 sha256_ctx;
 }SharedData;
 
 __constant__ static const WORD k[64] = {
@@ -74,7 +81,7 @@ static const WORD h_k[64] = {
 	0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
-__device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
+__device__ __forceinline__ void sha256_transform(CUDA_SHA256 *ctx, const BYTE *msg)
 {
 	WORD a, b, c, d, e, f, g, h;
 	WORD i, j;
@@ -109,14 +116,14 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 	
 	
 	// Initialize working variables to current hash value
-	a = ctx->h[0];
-	b = ctx->h[1];
-	c = ctx->h[2];
-	d = ctx->h[3];
-	e = ctx->h[4];
-	f = ctx->h[5];
-	g = ctx->h[6];
-	h = ctx->h[7];
+	a = ctx->state.h[0];
+	b = ctx->state.h[1];
+	c = ctx->state.h[2];
+	d = ctx->state.h[3];
+	e = ctx->state.h[4];
+	f = ctx->state.h[5];
+	g = ctx->state.h[6];
+	h = ctx->state.h[7];
 	
 	// Compress function main loop:
 	for(i=0;i<64;++i)
@@ -139,98 +146,141 @@ __device__ void sha256_transform(SHA256 *ctx, const BYTE *msg)
 	}
 	
 	// Add the compressed chunk to the current hash value
-	ctx->h[0] += a;
-	ctx->h[1] += b;
-	ctx->h[2] += c;
-	ctx->h[3] += d;
-	ctx->h[4] += e;
-	ctx->h[5] += f;
-	ctx->h[6] += g;
-	ctx->h[7] += h;
-	
+	ctx->state.h[0] += a;
+	ctx->state.h[1] += b;
+	ctx->state.h[2] += c;
+	ctx->state.h[3] += d;
+	ctx->state.h[4] += e;
+	ctx->state.h[5] += f;
+	ctx->state.h[6] += g;
+	ctx->state.h[7] += h;
 }
 
-__device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
+__device__ void sha256_init(CUDA_SHA256 *ctx)
 {
-	// Initialize hash values:
-	// (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
-	ctx->h[0] = 0x6a09e667;
-	ctx->h[1] = 0xbb67ae85;
-	ctx->h[2] = 0x3c6ef372;
-	ctx->h[3] = 0xa54ff53a;
-	ctx->h[4] = 0x510e527f;
-	ctx->h[5] = 0x9b05688c;
-	ctx->h[6] = 0x1f83d9ab;
-	ctx->h[7] = 0x5be0cd19;
-	
-	
-	WORD i, j;
-	size_t remain = len % 64;
-	size_t total_len = len - remain;
-	
-	// Process the message in successive 512-bit chunks
-	// For each chunk:
-	for(i=0;i<total_len;i+=64)
-	{
-		sha256_transform(ctx, &msg[i]);
-	}
-	
-	// Process remain data
-	BYTE m[64] = {};
-	for(i=total_len, j=0;i<len;++i, ++j)
-	{
-		m[j] = msg[i];
-	}
-	
-	// Append a single '1' bit
-	m[j++] = 0x80;  //1000 0000
-	
-	// Append K '0' bits, where k is the minimum number >= 0 such that L + 1 + K + 64 is a multiple of 512
-	if(j > 56)
-	{
-		sha256_transform(ctx, m);
-		memset(m, 0, sizeof(m));
-		// printf("true\n");
-	}
-	
-	// Append L as a 64-bit bug-endian integer, making the total post-processed length a multiple of 512 bits
-	unsigned long long L = len * 8;  //bits
-	m[63] = L;
-	m[62] = L >> 8;
-	m[61] = L >> 16;
-	m[60] = L >> 24;
-	m[59] = L >> 32;
-	m[58] = L >> 40;
-	m[57] = L >> 48;
-	m[56] = L >> 56;
-	sha256_transform(ctx, m);
-	
-	// Produce the final hash value (little-endian to big-endian)
-	// Swap 1st & 4th, 2nd & 3rd byte for each word
-	_swap(ctx->b[0], ctx->b[3]);
-    _swap(ctx->b[1], ctx->b[2]);
-
-    _swap(ctx->b[4], ctx->b[7]);
-    _swap(ctx->b[5], ctx->b[6]);
-
-    _swap(ctx->b[8], ctx->b[11]);
-    _swap(ctx->b[9], ctx->b[10]);
-
-    _swap(ctx->b[12], ctx->b[15]);
-    _swap(ctx->b[13], ctx->b[14]);
-
-    _swap(ctx->b[16], ctx->b[19]);
-    _swap(ctx->b[17], ctx->b[18]);
-
-    _swap(ctx->b[20], ctx->b[23]);
-    _swap(ctx->b[21], ctx->b[22]);
-
-    _swap(ctx->b[24], ctx->b[27]);
-    _swap(ctx->b[25], ctx->b[26]);
-
-    _swap(ctx->b[28], ctx->b[31]);
-    _swap(ctx->b[29], ctx->b[30]);
+    ctx->state.h[0] = 0x6a09e667;
+	ctx->state.h[1] = 0xbb67ae85;
+	ctx->state.h[2] = 0x3c6ef372;
+	ctx->state.h[3] = 0xa54ff53a;
+	ctx->state.h[4] = 0x510e527f;
+	ctx->state.h[5] = 0x9b05688c;
+	ctx->state.h[6] = 0x1f83d9ab;
+	ctx->state.h[7] = 0x5be0cd19;
+    ctx->data_len = 0;
+    ctx->bit_len = 0;
 }
+__device__ void sha256_update(CUDA_SHA256 *ctx, const BYTE *msg, size_t len)
+{
+    size_t i;
+    for (i = 0; i < len; ++i) {
+        ctx->data[ctx->data_len++] = msg[i];
+        if (ctx->data_len == 64) {
+            sha256_transform(ctx, ctx->data);
+            ctx->bit_len += 512;
+            ctx->data_len = 0;
+        }   
+    }
+}
+__device__ void sha256_final(CUDA_SHA256 *ctx)
+{
+    WORD i = ctx->data_len;
+
+    // Pad remaining data
+    ctx->data[i++] = 0x80;
+
+    if (i <= 56) {
+        while (i < 56)
+            ctx->data[i++] = 0x00;
+    }
+    else {
+        while (i < 64)
+			ctx->data[i++] = 0x00;
+        sha256_transform(ctx, ctx->data);
+		memset(ctx->data, 0, 56);
+    }
+
+    // Append the message length in bits
+    ctx->bit_len += ctx->data_len * 8;
+    ctx->data[63] = ctx->bit_len;
+    ctx->data[62] = ctx->bit_len >> 8;
+    ctx->data[61] = ctx->bit_len >> 16;
+    ctx->data[60] = ctx->bit_len >> 24;
+    ctx->data[59] = ctx->bit_len >> 32;
+    ctx->data[58] = ctx->bit_len >> 40;
+    ctx->data[57] = ctx->bit_len >> 48;
+    ctx->data[56] = ctx->bit_len >> 56;
+    sha256_transform(ctx, ctx->data);
+
+    // Convert to big-endian if necessary
+    for(i=0;i<32;i+=4)
+	{
+        _swap(ctx->state.b[i], ctx->state.b[i+3]);
+        _swap(ctx->state.b[i+1], ctx->state.b[i+2]);
+	}
+}
+// __device__ void sha256(SHA256 *ctx, const BYTE *msg, size_t len)
+// {
+// 	// Initialize hash values:
+// 	// (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
+// 	ctx->h[0] = 0x6a09e667;
+// 	ctx->h[1] = 0xbb67ae85;
+// 	ctx->h[2] = 0x3c6ef372;
+// 	ctx->h[3] = 0xa54ff53a;
+// 	ctx->h[4] = 0x510e527f;
+// 	ctx->h[5] = 0x9b05688c;
+// 	ctx->h[6] = 0x1f83d9ab;
+// 	ctx->h[7] = 0x5be0cd19;
+	
+	
+// 	WORD i, j;
+// 	size_t remain = len % 64;
+// 	size_t total_len = len - remain;
+	
+// 	// Process the message in successive 512-bit chunks
+// 	// For each chunk:
+// 	for(i=0;i<total_len;i+=64)
+// 	{
+// 		sha256_transform(ctx, &msg[i]);
+// 	}
+	
+// 	// Process remain data
+// 	BYTE m[64] = {};
+// 	for(i=total_len, j=0;i<len;++i, ++j)
+// 	{
+// 		m[j] = msg[i];
+// 	}
+	
+// 	// Append a single '1' bit
+// 	m[j++] = 0x80;  //1000 0000
+	
+// 	// Append K '0' bits, where k is the minimum number >= 0 such that L + 1 + K + 64 is a multiple of 512
+// 	if(j > 56)
+// 	{
+// 		sha256_transform(ctx, m);
+// 		memset(m, 0, sizeof(m));
+// 		// printf("true\n");
+// 	}
+	
+// 	// Append L as a 64-bit bug-endian integer, making the total post-processed length a multiple of 512 bits
+// 	unsigned long long L = len * 8;  //bits
+// 	m[63] = L;
+// 	m[62] = L >> 8;
+// 	m[61] = L >> 16;
+// 	m[60] = L >> 24;
+// 	m[59] = L >> 32;
+// 	m[58] = L >> 40;
+// 	m[57] = L >> 48;
+// 	m[56] = L >> 56;
+// 	sha256_transform(ctx, m);
+	
+// 	// Produce the final hash value (little-endian to big-endian)
+// 	// Swap 1st & 4th, 2nd & 3rd byte for each word
+// 	for(i=0;i<32;i+=4)
+// 	{
+//         _swap(ctx->b[i], ctx->b[i+3]);
+//         _swap(ctx->b[i+1], ctx->b[i+2]);
+// 	}
+// }
 
 // host version
 void h_sha256_transform(SHA256 *ctx, const BYTE *msg)
@@ -453,11 +503,11 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes)
-{
-    sha256(tmp, (BYTE*)bytes, sizeof(HashBlock));
-    sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256));
-}
+// __device__ void double_sha256(CUDA_SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes)
+// {
+//     sha256(tmp, (BYTE*)bytes, sizeof(HashBlock));
+//     sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256));
+// }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
     SHA256 tmp;
@@ -469,15 +519,24 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution) {
-    __shared__ SharedData d_data[BLOCK_SIZE];
+    __shared__ CUDA_SHA256 sha256_ctx[BLOCK_SIZE];
 
-    d_data[threadIdx.x].block = *block;
-    d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
+    HashBlock d_block = *block;
+    d_block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Compute double SHA-256
-    double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
+    // double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
+    sha256_init(&sha256_ctx[threadIdx.x]);
+    sha256_update(&sha256_ctx[threadIdx.x], (unsigned char*)&d_block, sizeof(HashBlock));
+    sha256_final(&sha256_ctx[threadIdx.x]);
 
-    const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.b);
+    SHA256 hash = sha256_ctx[threadIdx.x].state;
+    // Step 2: Initialize the context for the second hash
+    sha256_init(&sha256_ctx[threadIdx.x]);
+    sha256_update(&sha256_ctx[threadIdx.x], (BYTE*)&hash, sizeof(SHA256));
+    sha256_final(&sha256_ctx[threadIdx.x]);
+
+    const unsigned int *a_int = sha256_ctx[threadIdx.x].state.h;
     const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
     // compared from lowest bit
     int result = 0;
@@ -490,11 +549,12 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
     result = (result << 1) + (a_int[1] > b_int[1]) - (a_int[1] < b_int[1]);
     result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
 
+    solution[(result >= 0)] = d_block.nonce;
     // Check if the hash is less than the target
-    if (result < 0) {
-        // Write the solution and signal that a valid nonce is found
-        *solution = d_data[threadIdx.x].block.nonce;
-    }
+    // if (result < 0) {
+    //     // Write the solution and signal that a valid nonce is found
+    //     *solution = d_block.nonce;
+    // }
     
 }
 
@@ -572,7 +632,7 @@ void solve(FILE *fin, FILE *fout)
     getline(ntime, 9, fin);
     getline(nbits, 9, fin);
     fscanf(fin, "%d\n", &tx);
-    printf("start hashing");
+    printf("start hashing\n");
 
     raw_merkle_branch = new char [tx * 65];
     merkle_branch = new char *[tx];
@@ -653,7 +713,7 @@ void solve(FILE *fin, FILE *fout)
     // Allocate memory on the device
     cudaMalloc(&d_block, sizeof(HashBlock));
     cudaMalloc(&d_target, 32 * sizeof(unsigned char));
-    cudaMalloc(&d_solution, sizeof(unsigned int));
+    cudaMalloc(&d_solution, 2 * sizeof(unsigned int));
     cudaMalloc(&d_found_flag, sizeof(unsigned char));
 
     err = cudaGetLastError();
@@ -674,10 +734,18 @@ void solve(FILE *fin, FILE *fout)
     // Set the cache configuration for the kernel
     // cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferShared);
 
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(&attr, find_nonce);
+    printf("Shared memory size configured by kernel: %d bytes\n", attr.sharedSizeBytes);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0); // Query device 0
+    printf("Max shared memory per block: %d bytes\n", prop.sharedMemPerBlock);
+
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
     int threads_per_block = 256;
     int blocks_per_grid = 16777216; // Adjust based on your GPU
+    int shared_memory_size = 1024 * 56;
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution);
 
     err = cudaGetLastError();
@@ -693,7 +761,7 @@ void solve(FILE *fin, FILE *fout)
     }
     auto end_kernel = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> kernel_time = end_kernel - start_kernel;
-    std::cout << " Kernel Time: " << kernel_time.count() << " s" << std::endl;
+    std::cout << "Kernel Time: " << kernel_time.count() << " s" << std::endl;
 
     // Copy the result back to the host
     cudaMemcpy(&h_solution, d_solution, sizeof(unsigned int), cudaMemcpyDeviceToHost);
