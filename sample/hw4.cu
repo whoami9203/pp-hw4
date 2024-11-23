@@ -453,10 +453,10 @@ void getline(char *str, size_t len, FILE *fp)
 
 ////////////////////////   Hash   ///////////////////////
 
-__device__ void double_sha256(SHA256 *tmp, SHA256 *sha256_ctx, unsigned char *bytes)
+__device__ void double_sha256(SharedData *data)
 {
-    sha256(tmp, (BYTE*)bytes, sizeof(HashBlock));
-    sha256(sha256_ctx, (BYTE*)tmp, sizeof(SHA256));
+    sha256(&data->tmp, (BYTE*)&data->block, sizeof(HashBlock));
+    sha256(&data->sha256_ctx, (BYTE*)&data->tmp, sizeof(SHA256));
 }
 void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 {
@@ -480,7 +480,7 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
 
     if (!found_flag) {
         // Compute double SHA-256
-        double_sha256(&d_data[threadIdx.x].tmp, &d_data[threadIdx.x].sha256_ctx, (unsigned char*)&d_data[threadIdx.x]);
+        double_sha256(&d_data[threadIdx.x]);
 
         const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.b);
         const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
