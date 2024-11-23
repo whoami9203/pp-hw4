@@ -468,7 +468,7 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 ////////////////////   Find Nonce   /////////////////////
 
 
-__global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ const target, unsigned int *solution) {
+__global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution) {
     __shared__ SharedData d_data[BLOCK_SIZE];
 
     d_data[threadIdx.x].block = *block;
