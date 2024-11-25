@@ -19,7 +19,7 @@
 
 // #include "sha256.h"
 
-#define BLOCK_SIZE 192
+#define BLOCK_SIZE 128
 
 #define _rotl(v, s) ((v)<<(s) | (v)>>(32-(s)))
 #define _rotr(v, s) ((v)>>(s) | (v)<<(32-(s)))
@@ -680,7 +680,7 @@ void solve(FILE *fin, FILE *fout)
 
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
-    int threads_per_block = 192;
+    int threads_per_block = 128;
     int blocks_per_grid = 2560; // Adjust based on your GPU
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution);
 
