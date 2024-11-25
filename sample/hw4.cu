@@ -470,18 +470,19 @@ void h_double_sha256(SHA256 *sha256_ctx, unsigned char *bytes, size_t len)
 
 __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restrict__ target, unsigned int *solution) {
     __shared__ SharedData d_data[BLOCK_SIZE];
-    __shared__ unsigned int found_flag;
-    if (threadIdx.x == 0)
-        found_flag = solution[0];
-    __syncthreads();
 
     d_data[threadIdx.x].block = *block;
-    d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (!found_flag) {
+    unsigned int nonce = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int stride = gridDim.x * blockDim.x;
+
+    for (; 0xffffffff - nonce >= stride && !solution[0]; nonce += stride) {
+        d_data[threadIdx.x].block.nonce = nonce;
+
         // Compute double SHA-256
         double_sha256(&d_data[threadIdx.x]);
 
+        // Check if the hash is less than the target
         const unsigned int *a_int = reinterpret_cast<const unsigned int*>(d_data[threadIdx.x].sha256_ctx.b);
         const unsigned int *b_int = reinterpret_cast<const unsigned int*>(target);
         // compared from lowest bit
@@ -495,10 +496,8 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
         result = (result << 1) + (a_int[1] > b_int[1]) - (a_int[1] < b_int[1]);
         result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
 
-        // Check if the hash is less than the target
-
         // Write the solution and signal that a valid nonce is found
-        solution[(result >= 0)] = d_data[threadIdx.x].block.nonce;
+        solution[(result >= 0)] = nonce;
     }
 }
 
@@ -682,7 +681,7 @@ void solve(FILE *fin, FILE *fout)
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
     int threads_per_block = 256;
-    int blocks_per_grid = 16777216; // Adjust based on your GPU
+    int blocks_per_grid = 1280; // Adjust based on your GPU
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution);
 
     err = cudaGetLastError();
