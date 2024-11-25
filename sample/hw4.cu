@@ -19,7 +19,7 @@
 
 // #include "sha256.h"
 
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 192
 
 #define _rotl(v, s) ((v)<<(s) | (v)>>(32-(s)))
 #define _rotr(v, s) ((v)>>(s) | (v)<<(32-(s)))
