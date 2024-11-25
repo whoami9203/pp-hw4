@@ -19,7 +19,7 @@
 
 // #include "sha256.h"
 
-#define BLOCK_SIZE 128
+#define BLOCK_SIZE 256
 
 #define _rotl(v, s) ((v)<<(s) | (v)>>(32-(s)))
 #define _rotr(v, s) ((v)>>(s) | (v)<<(32-(s)))
@@ -472,13 +472,9 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
     __shared__ SharedData d_data[BLOCK_SIZE];
 
     d_data[threadIdx.x].block = *block;
+    d_data[threadIdx.x].block.nonce = blockIdx.x * blockDim.x + threadIdx.x;
 
-    unsigned int nonce = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int stride = gridDim.x * blockDim.x;
-
-    for (; 0xffffffff - nonce >= stride && !solution[0]; nonce += stride) {
-        d_data[threadIdx.x].block.nonce = nonce;
-
+    if (!solution[0]) {
         // Compute double SHA-256
         double_sha256(&d_data[threadIdx.x]);
 
@@ -497,7 +493,7 @@ __global__ void find_nonce(__restrict__ HashBlock *block, unsigned char* __restr
         result = (result << 1) + (a_int[0] > b_int[0]) - (a_int[0] < b_int[0]);
 
         // Write the solution and signal that a valid nonce is found
-        solution[(result >= 0)] = nonce;
+        solution[(result >= 0)] = d_data[threadIdx.x].block.nonce;
     }
 }
 
@@ -678,10 +674,19 @@ void solve(FILE *fin, FILE *fout)
     // Set the cache configuration for the kernel
     cudaFuncSetCacheConfig(find_nonce, cudaFuncCachePreferShared);
 
+    // cudaDeviceProp prop;
+    // cudaGetDeviceProperties(&prop, 0); // Query device 0
+    // printf("Max shared memory per block: %d bytes\n", prop.sharedMemPerBlock);
+
+    // cudaFuncAttributes attr;
+    // cudaFuncGetAttributes(&attr, find_nonce);
+    // printf("Shared memory size configured by kernel: %d bytes\n", attr.sharedSizeBytes);
+
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
-    int threads_per_block = 128;
-    int blocks_per_grid = 2560; // Adjust based on your GPU
+    int threads_per_block = 256;
+    int blocks_per_grid = (0xffffffff + (unsigned long long)threads_per_block - 1) / threads_per_block; // Adjust based on your GPU
+    fprintf(stderr, "blocks number: %d\n", blocks_per_grid);
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution);
 
     err = cudaGetLastError();
