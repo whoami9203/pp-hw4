@@ -680,7 +680,7 @@ void solve(FILE *fin, FILE *fout)
 
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
-    int threads_per_block = 192;
+    int threads_per_block = 256;
     int blocks_per_grid = 1280; // Adjust based on your GPU
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution);
 
@@ -739,7 +739,7 @@ void solve(FILE *fin, FILE *fout)
     // print_hex_inverse(sha256_ctx.b, 32);
     // printf("\n\n");
 
-    fprintf(stderr, "nonce: %u\n", h_solution);
+    fprintf(stderr, "nonce: %u\n", h_solution[0]);
 
     for(int i=0;i<4;++i)
     {
