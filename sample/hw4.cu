@@ -680,7 +680,7 @@ void solve(FILE *fin, FILE *fout)
 
     auto start_kernel = std::chrono::high_resolution_clock::now();
     // Launch kernel
-    int threads_per_block = 512;
+    int threads_per_block = 192;
     int blocks_per_grid = 1280; // Adjust based on your GPU
     find_nonce<<<blocks_per_grid, threads_per_block>>>(d_block, d_target, d_solution);
 
